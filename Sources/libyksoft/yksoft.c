@@ -68,7 +68,7 @@ int yk_update_data(yk_token_t *token) {
     int ret = 0;
     
     // Too many session uses, increment the main counter
-    if (token->token.use == UINT8_MAX) {
+    if (token->token.use == 0xff) {
         token->token.ctr += 1;
         
         if (token->token.ctr == 0x7fff) {
@@ -79,6 +79,8 @@ int yk_update_data(yk_token_t *token) {
         token->ponrand = random_uint32();
         token->token.use = 1;   // Reset session use counter
         ret = 1;    // Tell caller that we wrapped
+    } else {
+        token->token.use += 1;
     }
     
     // We go to great lengths to be lazy and not have to figure out the high precision time functions for the platform.
@@ -116,11 +118,15 @@ char* yk_generate_otp(yk_token_t *token) {
         return NULL;
     }
     
-    token->token.crc = ~yubikey_crc16((void*)&token->token, sizeof(token->token) - sizeof(token->token.crc));
+    // For some reason yubikey_generate messes up the token struct.
+    // Therefor we need to create a copy of it to generate the OTP.
+    yk_token_t copy = *token;
+    
+    copy.token.crc = ~yubikey_crc16((void*)&copy.token, sizeof(copy.token) - sizeof(copy.token.crc));
     
     char* otp = malloc((YUBIKEY_UID_SIZE * 2) + YUBIKEY_OTP_SIZE + 1);
-    yubikey_modhex_encode(otp, (char const *)token->public_id, sizeof(token->public_id));
-    yubikey_generate((void*)&token->token, token->aes_key, otp + (YUBIKEY_UID_SIZE * 2));
+    yubikey_modhex_encode(otp, (char const *)copy.public_id, sizeof(copy.public_id));
+    yubikey_generate((void*)&copy.token, copy.aes_key, otp + (YUBIKEY_UID_SIZE * 2));
 
     return otp;
 }
@@ -133,12 +139,12 @@ char* yk_token_public_id(yk_token_t *token) {
 
 char* yk_token_private_id(yk_token_t *token) {
     char* buffer = malloc((sizeof(token->token.uid) * 2) + 1);
-    yubikey_modhex_encode(buffer, (const char*)token->token.uid, sizeof(token->token.uid));
+    yubikey_hex_encode(buffer, (const char*)token->token.uid, sizeof(token->token.uid));
     return buffer;
 }
 
 char* yk_token_aes_key(yk_token_t *token) {
     char* buffer = malloc((sizeof(token->aes_key) * 2) + 1);
-    yubikey_modhex_encode(buffer, (const char*)token->aes_key, sizeof(token->aes_key));
+    yubikey_hex_encode(buffer, (const char*)token->aes_key, sizeof(token->aes_key));
     return buffer;
 }
